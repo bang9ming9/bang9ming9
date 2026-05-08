@@ -1,10 +1,6 @@
 # Go Backend Reliability Case Studies
 
-<div align="center">
-
-**Go 기반 백엔드 경험을 중심으로**  
-**외부 dependency와 운영 안정성 문제까지 다룬 사례들**  
-**Python 기반 AI backend reliability case도 포함**
+**Go 기반 백엔드 경험을 중심으로, 외부 dependency와 운영 안정성 문제까지 다룬 사례들을 정리한 포트폴리오입니다.**
 
 [![Go](https://img.shields.io/badge/Language-Go-00ADD8?logo=go&logoColor=white)](#)
 [![Python](https://img.shields.io/badge/Language-Python-3776AB?logo=python&logoColor=white)](#)
@@ -13,11 +9,9 @@
 [![On-chain](https://img.shields.io/badge/Domain-On--chain%20%2F%20Off--chain-805AD5)](#)
 [![Case Studies](https://img.shields.io/badge/Type-Case_Studies-E53E3E)](#)
 
-</div>
-
 > [!NOTE]
-> 이 문서는 기술 스택을 많이 나열하기 위한 README가 아니라,  
-> 실제 업무에서 마주한 문제를 **어떤 기준으로 나누고, 어떤 구조로 해결했는지**를 보여주기 위한 포트폴리오 입구 문서입니다.  
+> 이 문서는 기술 스택을 많이 나열하기 위한 README가 아니라, 실제 업무에서 마주한 문제를 **어떤 기준으로 나누고, 어떤 구조로 해결했는지**를 보여주기 위한 포트폴리오 입구 문서입니다.
+>
 > Go 기반 백엔드 경험을 중심에 두되, 외부 AI provider처럼 비용과 장애를 동반하는 dependency를 어떻게 운영 가능한 형태로 다뤘는지도 함께 보여줍니다.
 
 ---
@@ -27,24 +21,25 @@
 ```mermaid
 flowchart TD
     A[Go Backend Developer] --> B[Problem Focus<br/>복잡한 도메인을 실행 가능한 구조로 분해]
-    B --> C[📘 Case Study 1<br/>온체인 예측 시장 백엔드 플랫폼]
-    B --> D[🛠️ Case Study 2<br/>Ethereum 트랜잭션 운영 CLI]
-    B --> E[🤖 Case Study 3<br/>외부 AI 모델 호출 백엔드 운영 안정화]
 
-    C --> C1[🏗️ Service Boundary]
-    C --> C2[🔁 Event Reliability]
-    C --> C3[⛓️ TX Submission]
+    B --> C[Case Study 1<br/>온체인 예측 시장 백엔드 플랫폼]
+    B --> D[Case Study 2<br/>Ethereum 트랜잭션 운영 CLI]
+    B --> E[Case Study 3<br/>외부 AI 모델 호출 백엔드 운영 안정화]
 
-    D --> D1[🔐 Offline Signing]
-    D --> D2[🧾 Audit Trail]
-    D --> D3[⚖️ Tooling Boundary]
+    C --> C1[Service Boundary]
+    C --> C2[Event Reliability]
+    C --> C3[TX Submission]
 
-    E --> E1[⏱️ Provider Latency]
-    E --> E2[💸 Cost Guardrail]
-    E --> E3[🔁 Event Recovery]
-    E --> E4[🧱 Consumer Idempotency / Metrics]
+    D --> D1[Offline Signing]
+    D --> D2[Audit Trail]
+    D --> D3[Tooling Boundary]
 
-    C1 --> F[🎯 Common Strength<br/>책임 경계 · 실패 가능성 · 운영 가능성]
+    E --> E1[Provider Latency]
+    E --> E2[Cost Guardrail]
+    E --> E3[Event Recovery]
+    E --> E4[Consumer Idempotency / Metrics]
+
+    C1 --> F[Common Strength<br/>책임 경계 · 실패 가능성 · 운영 가능성]
     C2 --> F
     C3 --> F
     D1 --> F
@@ -80,9 +75,9 @@ flowchart TD
 
 | Case Study | Scope | Core Keywords | What it shows |
 |---|---|---|---|
-| [📘 온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
-| [🛠️ Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
-| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `Go` `gRPC` `Redis` `Message Broker` `Idempotency` `Event Recovery` `Metrics` | 외부 AI provider 호출의 timeout/retry 비용, duplicate generation, quota, completion event recovery, consumer idempotency를 단계적으로 제어 |
+| [온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
+| [Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
+| [외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `Go` `gRPC` `Redis` `Message Broker` `Idempotency` `Event Recovery` `Metrics` | 외부 AI provider 호출의 timeout/retry 비용, duplicate generation, quota, completion event recovery, consumer idempotency를 단계적으로 제어 |
 
 ---
 
@@ -94,6 +89,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     FE[Admin FE] --> API[Admin API]
+
     API -->|gRPC| PS[Platform Service]
     API -->|gRPC| CI[Chain Indexer]
     API -->|gRPC| TX[TX Scheduler]
@@ -105,6 +101,7 @@ flowchart LR
 
     CI --> CHAIN[(Blockchain)]
     TX --> CHAIN
+
     PS --> DB[(MySQL)]
     CI --> DB
     TX --> DB
@@ -122,7 +119,7 @@ flowchart LR
 | **tx-scheduler 분리** | nonce, retry, gas, receipt 처리를 개별 서비스가 아니라 전담 컴포넌트에서 관리하기 위해 |
 | **EDD 기반 문서화** | 구현 전에 요구사항, 경계, 실패 시나리오, 검증 기준을 정리하기 위해 |
 
-➡️ **[자세히 보기](./projects/onchain-prediction-market-backend.md)**
+[자세히 보기](./projects/onchain-prediction-market-backend.md)
 
 ---
 
@@ -151,7 +148,7 @@ flowchart LR
 | **offline signing** | 개인키 사용 환경과 네트워크 전송 환경을 분리하기 위해 |
 | **keystore / transaction lifecycle 분리** | 키 관리와 트랜잭션 실행 책임의 경계를 명확히 하기 위해 |
 
-➡️ **[자세히 보기](./projects/ethereum-transaction-cli-tools.md)**
+[자세히 보기](./projects/ethereum-transaction-cli-tools.md)
 
 ---
 
@@ -164,16 +161,22 @@ flowchart LR
 flowchart LR
     Client[Client] --> GoAPI[Go user-api]
     GoAPI -->|gRPC| API[Python AI Service]
+
     API -->|quota / dedupe check| Redis[(Redis)]
     API -->|bounded call| Provider[External AI Provider]
     API -->|store artifacts| Storage[(Object Storage)]
     API -->|publish work / completion| Broker[(Message Broker)]
+
     Broker --> Worker[Stage Worker]
+    Worker -->|store artifacts| Storage
+    Worker -->|update status| Status[(Job Status Store)]
+    Worker -->|publish completion| Broker
+
     Broker --> GoConsumer[Go Consumer]
-    GoConsumer -->|dedupe ack + skip| Redis
-    GoConsumer -->|WebSocket notify| Client
-    Worker --> Status[(Job Status Store)]
-    Worker --> Storage
+    GoConsumer -->|dedupe check| Redis
+    GoConsumer -->|first event| Client
+    GoConsumer -->|duplicate| Broker
+
     API --> Recovery[Completion Recovery CLI]
     API --> Obs[Metrics / Readiness]
     Worker --> Obs
@@ -183,11 +186,7 @@ flowchart LR
 
 핵심은 전체 흐름을 모두 비동기로 갈아엎는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름은 message broker 기반 stage 분리로 재구성했다는 점입니다.
 
-generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
-
-이후 비용과 중복 실행을 더 직접적으로 막기 위해 Redis quota/burst limit으로 신규 generation 요청을 provider 호출 전에 차단하고, provider billable call metric으로 비용성 호출을 관찰하도록 보강했습니다.
-
-request hash 기반 DB-level active uniqueness로 동시 duplicate generation을 줄였고, completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 남겼습니다.
+이후 비용과 중복 실행을 더 직접적으로 막기 위해 Redis quota/burst limit으로 신규 generation 요청을 provider 호출 전에 차단하고, provider billable call metric으로 비용성 호출을 관찰하도록 보강했습니다. request hash 기반 DB-level active uniqueness로 동시 duplicate generation을 줄였고, completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 남겼습니다.
 
 Go user-api 쪽에서는 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTTP 429로 매핑하고, Redis dedupe를 통해 중복 completion event를 ack + skip 처리하도록 정리했습니다.
 
@@ -205,11 +204,11 @@ Go user-api 쪽에서는 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTT
 | **DLQ 보장** | 메시지 처리 실패를 유실이 아니라 추적 가능한 상태로 남기기 위해 |
 | **stage-based retry** | generation / download / upload / publish 중 일부 실패가 불필요한 재생성으로 이어지지 않게 하기 위해 |
 | **completion event tracking / manual recovery** | 완료 상태 저장 이후 event publish 실패를 운영자가 식별하고 복구할 수 있게 하기 위해 |
-| **user-api consumer idempotency** | at-least-once delivery에서 중복 completion event가 사용자 상태 변경을 반복하지 않게 하기 위해 |
+| **user-api consumer idempotency** | at-least-once delivery에서 중복 completion event가 사용자 알림을 반복하지 않게 하기 위해 |
 | **readiness / liveness 분리** | 살아 있음과 서비스 가능 상태를 구분하기 위해 |
 | **metrics 보강** | provider 지연, 실패 지점, 재시도 패턴을 운영 관점에서 관찰하기 위해 |
 
-➡️ **[자세히 보기](./projects/external-ai-model-call-backend-stabilization.md)**
+[자세히 보기](./projects/external-ai-model-call-backend-stabilization.md)
 
 ---
 
@@ -268,9 +267,11 @@ flowchart TB
 ```mermaid
 flowchart LR
     A[처음 방문] --> B{무엇이 궁금한가?}
-    B -->|전체 시스템 설계| C[📘 Prediction Market Backend]
-    B -->|운영 안정성과 workflow| D[🛠️ Ethereum CLI Tools]
-    B -->|AI provider 운영 안정화| G[🤖 External AI Backend]
+
+    B -->|전체 시스템 설계| C[Prediction Market Backend]
+    B -->|운영 안정성과 workflow| D[Ethereum CLI Tools]
+    B -->|AI provider 운영 안정화| G[External AI Backend]
+
     C --> E[서비스 경계 / 이벤트 처리 / TX 제출 구조]
     D --> F[Foundry / Offline Signing / Audit Trail]
     G --> H[provider latency / retry budget / Redis quota / DB idempotency / event recovery / consumer idempotency]
