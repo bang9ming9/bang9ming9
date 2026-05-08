@@ -122,7 +122,7 @@ flowchart LR
         Broker --> DLQ[(Dead Letter Queue)]
     end
 
-    API --> Broker
+    API -->|publish follow-up work| Broker
 ```
 
 ### Component Map
@@ -162,7 +162,7 @@ flowchart LR
 
 | Before | After | Operational effect |
 |---|---|---|
-| 긴 모델 호출이 동기 preview 요청 안에 묶여 있었음 | 동기 preview 흐름에 bounded timeout / retry budget 적용 | preview를 async job으로 바꾸지 않고도 worker 점유 상한과 비용을 제한 |
+| 긴 모델 호출이 동기 preview 요청 안에 묶여 있었음 | 동기 preview 흐름에 bounded timeout/retry budget 적용 | preview를 async job으로 바꾸지 않고도 worker 점유 상한과 비용을 제한 |
 | provider 에러와 내부 에러가 뒤섞여 있었음 | safe error mapping으로 응답 표준화 | 사용자 노출을 막고 운영 추적은 로그/metrics로 분리 |
 | retry가 느슨하게 열려 있었음 | timeout / retry budget 적용 | 비용 폭증과 무한 재시도를 억제 |
 | 반복 요청이 그대로 새 생성으로 이어질 수 있었음 | duplicate request reuse 적용 | 중복 생성 비용 완화 |
