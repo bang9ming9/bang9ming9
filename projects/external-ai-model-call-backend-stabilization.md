@@ -13,7 +13,7 @@
 |---|---|
 | 유형 | 비공개 실서비스 준비 백엔드 |
 | 상태 | 비공개 서비스 준비 단계의 안정화 |
-| 역할 | 호출 흐름 안정화, 오류 표준화, 비동기 단계 분리, 운영 관찰성 보강 |
+| 역할 | 호출 흐름 안정화, 오류 표준화, 후속 단계 분리, 운영 관찰성 보강 |
 | 주요 기술 | Python, gRPC, Message Broker, Object Storage, job status store, metrics |
 | 핵심 주제 | provider dependency, timeout/retry budget, duplicate request reuse, DLQ, readiness/liveness |
 
@@ -102,11 +102,11 @@ flowchart LR
     Client[Client / Internal API] --> API[AI Backend]
 
     subgraph Sync[Sync Preview Path]
-        API -->|gRPC| Provider[External AI Provider]
-        Provider --> API
-        API --> Storage[(Object Storage)]
-        API --> Status[(Job Status Store)]
-        API --> Obs[Metrics / Readiness]
+        API -->|gRPC request| Provider[External AI Provider]
+        Provider -->|model result| API
+        API -->|persist result| Storage[(Object Storage)]
+        API -->|update state| Status[(Job Status Store)]
+        API -->|emit signals| Obs[Metrics / Readiness]
         API -. timeout / retry budget .-> Provider
         API -. safe error mapping .-> Status
         API -. duplicate request reuse .-> Status
@@ -165,12 +165,12 @@ flowchart LR
 
 | Before | After | Operational effect |
 |---|---|---|
-| 긴 모델 호출이 동기 preview 요청 안에 묶여 있었음 | timeout / retry budget으로 worker 점유 상한을 설정 | preview를 async job으로 바꾸지 않고도 장시간 호출의 영향과 비용을 제한 |
+| 긴 모델 호출이 동기 preview 요청 안에 묶여 있었음 | 동기 preview 흐름에 bounded timeout / retry budget 적용 | preview를 async job으로 바꾸지 않고도 worker 점유 상한과 비용을 제한 |
 | provider 에러와 내부 에러가 뒤섞여 있었음 | safe error mapping으로 응답 표준화 | 사용자 노출을 막고 운영 추적은 로그/metrics로 분리 |
 | retry가 느슨하게 열려 있었음 | timeout / retry budget 적용 | 비용 폭증과 무한 재시도를 억제 |
 | 반복 요청이 그대로 새 생성으로 이어질 수 있었음 | duplicate request reuse 적용 | 중복 생성 비용 완화 |
 | 일부 message 실패가 묻힐 수 있었음 | DLQ 보장 | 실패 작업을 추적 가능 상태로 유지 |
-| upload/publish 실패가 재생성을 유발할 수 있었음 | generation / download / upload / publish stage별 retry 적용 | 후속 고비용 흐름에서 실패 범위를 좁히고 불필요한 재생성을 차단 |
+| upload/publish 실패가 재생성을 유발할 수 있었음 | 후속 고비용 흐름에 generation / download / upload / publish stage-based retry 적용 | 후속 흐름에서 실패 범위를 좁히고 불필요한 재생성을 차단 |
 | 기동 후에야 config 문제를 발견할 수 있었음 | production config fail-fast | 배포 실패를 더 일찍, 더 명확하게 드러냄 |
 | 운영 상태를 감으로 판단해야 했음 | readiness / metrics 보강 | 서비스 가능 여부와 원인 파악이 쉬워짐 |
 

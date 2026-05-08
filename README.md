@@ -167,7 +167,6 @@ flowchart LR
     Broker --> Worker[Stage Worker]
     Worker --> Status[(Job Status Store)]
     Worker --> Storage
-    Worker -->|sanitize errors| API
     API --> Obs[Metrics / Readiness]
     Worker --> Obs
 ```
