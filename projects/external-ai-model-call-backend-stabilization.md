@@ -114,11 +114,8 @@ flowchart LR
 
     subgraph Async[Async Follow-up Path]
         Broker[(Message Broker)] --> Worker[Stage Worker]
-        Worker --> G[Generate]
-        G --> Provider
-        Worker --> D[Download]
-        Worker --> U[Upload]
-        Worker --> P[Publish]
+        Worker -->|gRPC request| Provider[External AI Provider]
+        Provider -->|model result| Worker
         Worker --> Storage
         Worker --> Status
         Worker --> Obs[Metrics / Readiness]
