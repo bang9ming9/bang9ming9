@@ -40,8 +40,9 @@ flowchart TD
     D --> D3[⚖️ Tooling Boundary]
 
     E --> E1[⏱️ Provider Latency]
-    E --> E2[💸 Retry Cost]
-    E --> E3[📈 Readiness / Metrics]
+    E --> E2[💸 Cost Guardrail]
+    E --> E3[🔁 Event Recovery]
+    E --> E4[🧱 Consumer Idempotency / Metrics]
 
     C1 --> F[🎯 Common Strength<br/>책임 경계 · 실패 가능성 · 운영 가능성]
     C2 --> F
@@ -52,6 +53,7 @@ flowchart TD
     E1 --> F
     E2 --> F
     E3 --> F
+    E4 --> F
 ```
 
 ---
@@ -68,7 +70,7 @@ flowchart TD
 | **Communication** | REST, gRPC, AMQP의 역할을 어떻게 나눌 것인가? |
 | **Reliability** | DB 저장과 메시지 발행 사이의 불일치를 어떻게 줄일 것인가? |
 | **On-chain Integration** | 체인 이벤트 수집과 온체인 TX 제출을 어떻게 백엔드 흐름에 연결할 것인가? |
-| **External Dependency** | 외부 AI provider 지연, retry 비용, 메시지 실패, readiness/metrics를 어떻게 제어할 것인가? |
+| **External Dependency** | 외부 AI provider 지연, retry 비용, quota, 중복 요청, completion event 실패, consumer idempotency를 어떻게 제어할 것인가? |
 | **Operation Workflow** | 개인키 사용, 서명, 전송, 감사 로그를 어떻게 검토 가능한 절차로 만들 것인가? |
 | **Documentation** | 빠른 개발 중에도 설계 의도와 검증 기준을 어떻게 남길 것인가? |
 
@@ -80,7 +82,7 @@ flowchart TD
 |---|---|---|---|
 | [📘 온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
 | [🛠️ Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
-| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `gRPC` `Message Broker` `Object Storage` `Reliability` `Metrics` | 동기 preview 흐름의 timeout/retry budget을 제한하고, 후속 stage를 broker 기반으로 분리해 재생성 비용과 메시지 실패를 제어 |
+| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `Go` `gRPC` `Redis` `Message Broker` `Idempotency` `Event Recovery` `Metrics` | 외부 AI provider 호출의 timeout/retry 비용, duplicate generation, quota, completion event recovery, consumer idempotency를 단계적으로 제어 |
 
 ---
 
@@ -156,24 +158,31 @@ flowchart LR
 ## 3) 외부 AI 모델 호출 백엔드 운영 안정화
 
 > [!TIP]
-> AI provider 호출을 비용과 장애를 동반하는 운영 dependency로 다루고, readiness/metrics와 메시지 실패 분리를 어떻게 넣었는지 보고 싶다면 이 문서를 추천합니다.
+> Python AI service와 Go user-api가 연동되는 구조에서 AI provider 호출을 비용과 장애를 동반하는 운영 dependency로 다루고, quota/idempotency/event recovery를 어떻게 보강했는지 보고 싶다면 이 문서를 추천합니다.
 
 ```mermaid
 flowchart LR
-    Client[Client / Internal API] --> API[AI Backend]
-    API -->|gRPC| Provider[External AI Provider]
+    Client[Client] --> GoAPI[Go user-api]
+    GoAPI -->|gRPC| API[Python AI Service]
+    API -->|quota / dedupe check| Redis[(Redis)]
+    API -->|bounded call| Provider[External AI Provider]
     API -->|store artifacts| Storage[(Object Storage)]
-    API -->|publish work| Broker[(Message Broker)]
+    API -->|publish work / completion| Broker[(Message Broker)]
     Broker --> Worker[Stage Worker]
+    Broker --> GoConsumer[Go Consumer]
+    GoConsumer -->|dedupe ack + skip| Redis
     Worker --> Status[(Job Status Store)]
     Worker --> Storage
+    API --> Recovery[Completion Recovery CLI]
     API --> Obs[Metrics / Readiness]
     Worker --> Obs
 ```
 
-이 프로젝트는 기능 중심의 AI 이미지 생성 백엔드를 실서비스 준비 수준으로 끌어올리며, **외부 AI provider 호출을 단순 연동이 아니라 비용과 장애를 동반한 운영 dependency로 다룬 사례**입니다.
+이 프로젝트는 기능 중심의 AI 이미지 생성 백엔드를 실서비스 준비 수준으로 끌어올리며, **Python AI service와 Go user-api 연계 구간에서 외부 AI provider 호출을 단순 연동이 아니라 비용과 장애를 동반한 운영 dependency로 다룬 사례**입니다.
 
 핵심은 전체 흐름을 모두 비동기로 갈아엎는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름은 message broker 기반 stage 분리로 재구성했다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
+
+이후 비용과 중복 실행을 더 직접적으로 막기 위해 Redis quota/burst limit으로 신규 generation 요청을 provider 호출 전에 차단하고, provider billable call metric으로 비용성 호출을 관찰하도록 보강했습니다. request hash 기반 DB-level active uniqueness로 동시 duplicate generation을 줄였고, completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 남겼습니다. Go user-api 쪽에서는 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTTP 429로 매핑하고, Redis dedupe를 통해 중복 completion event를 ack + skip 처리하도록 정리했습니다.
 
 핵심 설계는 다음과 같습니다.
 
@@ -183,8 +192,13 @@ flowchart LR
 | **production config fail-fast** | 빈 secret, placeholder, dev fallback으로 production이 기동되는 위험을 막기 위해 |
 | **timeout / retry budget** | worker 무한 점유와 비용 폭증을 동시에 제한하기 위해 |
 | **duplicate request reuse** | 동일 요청 반복으로 인한 중복 생성 비용을 줄이기 위해 |
+| **Redis quota / burst limit** | provider 호출 전에 과도한 신규 generation을 차단해 비용성 dependency 진입을 제한하기 위해 |
+| **provider billable metric** | 단순 요청 수가 아니라 실제 비용으로 이어질 수 있는 호출을 관찰하기 위해 |
+| **DB-level active idempotency** | 동시 요청 경쟁에서도 active generation 중복 생성을 애플리케이션 체크에만 의존하지 않기 위해 |
 | **DLQ 보장** | 메시지 처리 실패를 유실이 아니라 추적 가능한 상태로 남기기 위해 |
 | **stage-based retry** | generation / download / upload / publish 중 일부 실패가 불필요한 재생성으로 이어지지 않게 하기 위해 |
+| **completion event tracking / manual recovery** | 완료 상태 저장 이후 event publish 실패를 운영자가 식별하고 복구할 수 있게 하기 위해 |
+| **user-api consumer idempotency** | at-least-once delivery에서 중복 completion event가 사용자 상태 변경을 반복하지 않게 하기 위해 |
 | **readiness / liveness 분리** | 살아 있음과 서비스 가능 상태를 구분하기 위해 |
 | **metrics 보강** | provider 지연, 실패 지점, 재시도 패턴을 운영 관점에서 관찰하기 위해 |
 
@@ -213,12 +227,12 @@ flowchart TB
     C --> C1[DB 저장과 메시지 발행 불일치]
     C --> C2[nonce / retry / receipt 관리]
     C --> C3[서명 전 검토 부족]
-    C --> C4[provider timeout / duplicate request / message failure]
+    C --> C4[provider timeout / quota / duplicate request / event failure]
 
     D --> D1[Outbox / DLQ]
     D --> D2[offline signing]
     D --> D3[audit trail]
-    D --> D4[readiness / metrics / safe error mapping]
+    D --> D4[readiness / metrics / recovery / idempotent consumer]
 
     E --> E1[직접 구현 vs 생태계 도구 위임]
     E --> E2[편의성 vs 책임 경계]
@@ -231,9 +245,9 @@ flowchart TB
 | Area | What I focused on |
 |---|---|
 | **Backend System Design** | Go 기반 서비스의 책임 경계와 내부 실행 단위 설계 |
-| **Reliability Engineering** | Outbox, retry, DLQ, nonce, receipt polling 등 실패 가능성 관리 |
+| **Reliability Engineering** | Outbox, retry, DLQ, nonce, receipt polling, at-least-once event handling 등 실패 가능성 관리 |
 | **On-chain / Off-chain Integration** | 체인 이벤트와 백엔드 상태 전이를 연결하는 구조 설계 |
-| **External Dependency Control** | 외부 provider 지연, 재시도 비용, 중복 요청, 메시지 실패를 운영 관점에서 제어 |
+| **External Dependency Control** | 외부 provider 지연, quota, 재시도 비용, 중복 요청, completion event 실패, consumer idempotency를 운영 관점에서 제어 |
 | **Operation Workflow** | 서명, 전송, 감사 로그를 검토 가능한 운영 절차로 분리 |
 | **Technical Judgment** | 직접 구현할 영역과 검증된 도구에 위임할 영역 구분 |
 | **Documentation** | 구현 전에 설계 의도와 검증 기준을 정리하는 개발 방식 |
@@ -250,7 +264,7 @@ flowchart LR
     B -->|AI provider 운영 안정화| G[🤖 External AI Backend]
     C --> E[서비스 경계 / 이벤트 처리 / TX 제출 구조]
     D --> F[Foundry / Offline Signing / Audit Trail]
-    G --> H[provider latency / retry budget / metrics / DLQ]
+    G --> H[provider latency / retry budget / Redis quota / DB idempotency / event recovery / consumer idempotency]
 ```
 
 1. **[온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md)**  
@@ -260,7 +274,7 @@ flowchart LR
    운영 자동화, offline signing, Foundry 도입, 감사 가능한 workflow 설계를 더 구체적으로 볼 수 있습니다.
 
 3. **[외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md)**  
-   동기 preview의 timeout/retry budget, broker 기반 stage 분리, readiness/metrics, 메시지 실패 관찰성을 볼 수 있습니다.
+   동기 preview의 timeout/retry budget, Redis quota, DB-level idempotency, broker 기반 stage 분리, completion event recovery, Go user-api consumer idempotency를 볼 수 있습니다.
 
 ---
 
