@@ -2,14 +2,15 @@
 
 # 외부 AI 모델 호출 백엔드 운영 안정화
 
-> 비공개 실서비스 준비 과정에서 수행한 외부 AI 이미지 생성 백엔드 안정화 경험을 일반화해 정리했습니다.  
+> 비공개 실서비스 준비 과정에서 수행한 외부 AI 이미지 생성 백엔드 안정화 경험을 일반화해 정리했습니다.
+>
 > 실제 서비스명, 내부 프로젝트명, provider명, model명, queue/table/event/endpoint/proto 이름, 파일 경로, secret, credential, presigned URL, 정확한 timeout/retry/quota 값은 공개하지 않습니다.
 
 ---
 
 ## 1. Context
 
-이 사례는 Python gRPC AI service와 Go user-api가 연동되는 이미지 생성 backend를 실서비스 준비 수준으로 안정화한 작업입니다.
+이 사례는 **Python gRPC AI service**와 **Go user-api**가 연동되는 이미지 생성 backend를 실서비스 준비 수준으로 안정화한 작업입니다.
 
 구조는 공개 가능한 범위에서 다음처럼 일반화할 수 있습니다.
 
@@ -52,9 +53,9 @@
 | 2 | preview timeout/retry budget을 두어 동기 gRPC worker 점유와 provider retry 비용을 제한 |
 | 3 | duplicate request reuse를 넣고, 이후 request hash 기반 DB-level active idempotency로 동시 duplicate generation을 방어 |
 | 4 | Redis quota/burst limit으로 신규 generation을 provider 호출 전에 차단하고 provider billable metric으로 비용성 호출을 관찰 |
-| 5 | RabbitMQ DLQ와 hires retry stage split으로 generation / download / upload / publish 실패 범위를 분리 |
+| 5 | message broker DLQ와 hires retry stage split으로 generation / download / upload / publish 실패 범위를 분리 |
 | 6 | completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 전환 |
-| 7 | Go user-api에서 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTTP 429로 매핑하고, Redis dedupe로 duplicate completion event를 ack + skip 처리 |
+| 7 | Go user-api에서 AI service의 quota 초과 응답을 HTTP 429로 매핑하고, Redis dedupe로 duplicate completion event를 ack + skip 처리 |
 
 각 단계는 큰 구조 개편보다, 실제 운영에서 비용과 장애로 이어지는 경로를 하나씩 닫는 방향으로 진행했습니다.
 
@@ -78,11 +79,14 @@ sequenceDiagram
 
     C->>U: Generate request
     U->>A: GeneratePreview gRPC
+
     A->>D: Check reusable / active request hash
+
     alt duplicate reusable
         A-->>U: Existing generation response
     else new generation
         A->>R: Quota / burst check
+
         alt quota exceeded
             A-->>U: Quota exceeded error
             U-->>C: HTTP 429
@@ -90,23 +94,24 @@ sequenceDiagram
             A->>P: Bounded provider call
             A->>S: Store artifact
             A->>D: Persist status and publish tracking
-            A->>B: Publish completion event
             A-->>U: Preview response
         end
     end
 
-    B-->>W: payment event / follow-up work
+    B-->>W: Payment event / follow-up work
     W->>P: Bounded high-cost generation
     W->>S: Store artifact
     W->>D: Mark completed and publish tracking
     W->>B: Publish completion event
 
-    B-->>U: completion event
+    B-->>U: Completion event
     U->>R: Consumer dedupe check
+
     alt duplicate event
         U-->>B: Ack and skip
     else first event
-        U->>D: Apply completion side effect
+        U->>R: Mark event processed
+        U-->>C: WebSocket notify
         U-->>B: Ack
     end
 
@@ -115,7 +120,9 @@ sequenceDiagram
     CLI->>D: Mark recovery result
 ```
 
-이 구조에서 GeneratePreview는 아직 동기 gRPC worker를 점유합니다. 대신 timeout/retry budget, quota, idempotency, safe error mapping으로 동기 경로의 위험을 제한하고, 후속 고비용 작업과 completion event는 broker와 recovery 흐름으로 분리했습니다.
+이 구조에서 `GeneratePreview`는 아직 동기 gRPC worker를 점유합니다.
+
+대신 timeout/retry budget, quota, idempotency, safe error mapping으로 동기 경로의 위험을 제한하고, 후속 고비용 작업과 completion event는 broker와 recovery 흐름으로 분리했습니다.
 
 ---
 
@@ -138,15 +145,17 @@ sequenceDiagram
 
 ## 6. Verification
 
-검증은 외부 provider, object storage, broker, Redis를 fake/mock으로 격리해 수행했습니다. 정확한 테스트 개수는 공개하지 않고, 검증 관점만 일반화해 정리합니다.
+검증은 외부 provider, object storage, broker, Redis를 fake/mock으로 격리해 수행했습니다.
+
+정확한 테스트 개수는 공개하지 않고, 검증 관점만 일반화해 정리합니다.
 
 | Area | Verification |
 |---|---|
 | Python AI service | pytest 기반으로 timeout/retry, duplicate reuse, quota, provider billable metric, completion publish tracking, recovery 흐름을 검증 |
-| Go user-api | targeted go test로 `RESOURCE_EXHAUSTED` 계열 응답의 HTTP 429 mapping과 completion event consumer idempotency를 검증 |
+| Go user-api | targeted go test로 quota 초과 응답의 HTTP 429 mapping과 completion event consumer idempotency를 검증 |
 | Error exposure | raw provider error, 내부 exception, secret-like string이 사용자 응답에 노출되지 않는지 검증 |
 | External dependency isolation | provider/storage/broker/Redis 실패를 fake/mock으로 재현해 stage별 실패 범위를 검증 |
-| Formatting and checks | ruff, go test, git diff check로 문법, 테스트, 의도하지 않은 변경을 확인 |
+| Formatting and checks | ruff, targeted go test, git diff check로 문법, 테스트, 의도하지 않은 변경을 확인 |
 
 테스트의 목적은 성공 경로보다, duplicate / quota / recovery / idempotency처럼 운영 중 비용이나 상태 불일치로 이어지는 경계를 재현하는 것이었습니다.
 
@@ -160,10 +169,13 @@ sequenceDiagram
 | full outbox dispatcher는 아직 없음 | completion publish tracking과 manual recovery는 복구 수단이지 완전한 자동 dispatcher가 아님 |
 | manual recovery는 operator action 필요 | 미발행 completion event를 복구하려면 운영자가 CLI를 실행해야 함 |
 | Redis quota/dedupe는 TTL/fixed-window 기반 한계가 있음 | sliding window, distributed counter 정확성, 매우 늦은 duplicate 처리에는 추가 설계가 필요함 |
+| Redis dedupe 장애 중 fail-open 정책으로 duplicate notification이 가능할 수 있음 | 중복 알림보다 완료 알림 유실을 더 큰 리스크로 보고 의도적으로 fail-open을 선택함 |
 | exactly-once delivery는 비목표 | at-least-once delivery와 idempotent consumer를 현실적인 전제로 둠 |
 | provider abstraction/fallback은 후속 개선 후보 | 단일 provider dependency를 먼저 안정화했고, multi-provider routing은 별도 과제로 남김 |
 
-이 한계들은 숨긴 것이 아니라, 현재 단계에서 의도적으로 둔 경계입니다. 먼저 비용과 장애가 크게 번지는 경로를 제한하고, 이후 full outbox dispatcher나 provider fallback 같은 구조 개선을 검토할 수 있게 만들었습니다.
+이 한계들은 숨긴 것이 아니라, 현재 단계에서 의도적으로 둔 경계입니다.
+
+먼저 비용과 장애가 크게 번지는 경로를 제한하고, 이후 full outbox dispatcher나 provider fallback 같은 구조 개선을 검토할 수 있게 만들었습니다.
 
 ---
 

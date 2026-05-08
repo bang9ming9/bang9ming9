@@ -26,7 +26,7 @@
 
 ```mermaid
 flowchart TD
-    A[👨‍💻 Go Backend Developer] --> B[🧩 Problem Focus<br/>복잡한 도메인을 실행 가능한 구조로 분해]
+    A[Go Backend Developer] --> B[Problem Focus<br/>복잡한 도메인을 실행 가능한 구조로 분해]
     B --> C[📘 Case Study 1<br/>온체인 예측 시장 백엔드 플랫폼]
     B --> D[🛠️ Case Study 2<br/>Ethereum 트랜잭션 운영 CLI]
     B --> E[🤖 Case Study 3<br/>외부 AI 모델 호출 백엔드 운영 안정화]
@@ -171,6 +171,7 @@ flowchart LR
     Broker --> Worker[Stage Worker]
     Broker --> GoConsumer[Go Consumer]
     GoConsumer -->|dedupe ack + skip| Redis
+    GoConsumer -->|WebSocket notify| Client
     Worker --> Status[(Job Status Store)]
     Worker --> Storage
     API --> Recovery[Completion Recovery CLI]
@@ -180,9 +181,15 @@ flowchart LR
 
 이 프로젝트는 기능 중심의 AI 이미지 생성 백엔드를 실서비스 준비 수준으로 끌어올리며, **Python AI service와 Go user-api 연계 구간에서 외부 AI provider 호출을 단순 연동이 아니라 비용과 장애를 동반한 운영 dependency로 다룬 사례**입니다.
 
-핵심은 전체 흐름을 모두 비동기로 갈아엎는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름은 message broker 기반 stage 분리로 재구성했다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
+핵심은 전체 흐름을 모두 비동기로 갈아엎는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름은 message broker 기반 stage 분리로 재구성했다는 점입니다.
 
-이후 비용과 중복 실행을 더 직접적으로 막기 위해 Redis quota/burst limit으로 신규 generation 요청을 provider 호출 전에 차단하고, provider billable call metric으로 비용성 호출을 관찰하도록 보강했습니다. request hash 기반 DB-level active uniqueness로 동시 duplicate generation을 줄였고, completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 남겼습니다. Go user-api 쪽에서는 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTTP 429로 매핑하고, Redis dedupe를 통해 중복 completion event를 ack + skip 처리하도록 정리했습니다.
+generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
+
+이후 비용과 중복 실행을 더 직접적으로 막기 위해 Redis quota/burst limit으로 신규 generation 요청을 provider 호출 전에 차단하고, provider billable call metric으로 비용성 호출을 관찰하도록 보강했습니다.
+
+request hash 기반 DB-level active uniqueness로 동시 duplicate generation을 줄였고, completion event publish tracking과 manual recovery CLI로 완료 이벤트 발행 실패를 복구 가능한 상태로 남겼습니다.
+
+Go user-api 쪽에서는 AI service의 `RESOURCE_EXHAUSTED` 계열 응답을 HTTP 429로 매핑하고, Redis dedupe를 통해 중복 completion event를 ack + skip 처리하도록 정리했습니다.
 
 핵심 설계는 다음과 같습니다.
 
@@ -208,7 +215,9 @@ flowchart LR
 
 ## Common Thread
 
-세 프로젝트는 범위가 다릅니다. 하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례이며, 세 번째는 외부 AI provider를 포함한 동기 preview와 후속 비동기 stage의 운영 안정화를 다룬 사례입니다.
+세 프로젝트는 범위가 다릅니다.
+
+하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례이며, 세 번째는 외부 AI provider를 포함한 동기 preview와 후속 비동기 stage의 운영 안정화를 다룬 사례입니다.
 
 하지만 문제를 바라보는 방식은 같습니다.
 
