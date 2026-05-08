@@ -1,4 +1,4 @@
-[← Back to Go Backend Case Studies](../README.md)
+[← Back to Go Backend Reliability Case Studies](../README.md)
 
 # 외부 AI 모델 호출 백엔드 운영 안정화
 
@@ -12,13 +12,13 @@
 | 항목 | 내용 |
 |---|---|
 | 유형 | 비공개 실서비스 준비 백엔드 |
-| 상태 | 운영 안정화 및 출시 준비 |
+| 상태 | 비공개 서비스 준비 단계의 안정화 |
 | 역할 | 호출 흐름 안정화, 오류 표준화, 비동기 단계 분리, 운영 관찰성 보강 |
 | 주요 기술 | Python, gRPC, Message Broker, Object Storage, job status store, metrics |
 | 핵심 주제 | provider dependency, timeout/retry budget, duplicate request reuse, DLQ, readiness/liveness |
 
 이 사례는 외부 AI 모델 호출을 기능 구현이 아니라 **비용과 장애를 동반하는 운영 dependency**로 다룬 작업입니다.  
-단일 RPC 안에서 모델 호출을 끝내는 구조로는 worker 점유, 재시도 비용, 중복 생성, 메시지 실패를 통제하기 어렵다고 판단했고, 호출 흐름을 단계화하고 실패 지점을 분리하는 쪽으로 안정화했습니다.
+핵심은 전체 구조를 비동기 preview job 중심으로 바꾸는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름만 message broker 기반 stage 분리로 다뤘다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
 
 ---
 
@@ -100,24 +100,32 @@
 ```mermaid
 flowchart LR
     Client[Client / Internal API] --> API[AI Backend]
-    API -->|gRPC| Provider[External AI Provider]
-    API --> Broker[(Message Broker)]
-    API --> Storage[(Object Storage)]
-    API --> Obs[Metrics / Readiness]
 
-    Broker --> Worker[Stage Worker]
-    Worker --> G[Generate]
-    G --> D[Download]
-    D --> U[Upload]
-    U --> P[Publish]
+    subgraph Sync[Sync Preview Path]
+        API -->|gRPC| Provider[External AI Provider]
+        Provider --> Storage[(Object Storage)]
+        Storage --> Status[(Job Status Store)]
+        API -. timeout / retry budget .-> Provider
+        API -. safe error mapping .-> Status
+        API -. duplicate request reuse .-> Status
+    end
 
-    G --> Provider
-    D --> Storage
-    U --> Storage
-    P --> Status[(Job Status Store)]
+    subgraph Async[Async Follow-up Path]
+        Broker[(Message Broker)] --> Worker[Stage Worker]
+        Worker --> G[Generate]
+        G --> D[Download]
+        D --> U[Upload]
+        U --> P[Publish]
+        G --> Provider
+        D --> Storage
+        U --> Storage
+        P --> Status
+        Broker --> DLQ[(Dead Letter Queue)]
+        Worker --> Obs[Metrics / Readiness]
+    end
 
-    Worker --> Obs
-    Broker --> DLQ[(Dead Letter Queue)]
+    API --> Broker
+    API --> Obs
 ```
 
 ### Component Map
@@ -172,13 +180,13 @@ flowchart LR
 
 | Not done | Why it was deferred |
 |---|---|
-| full idempotency with unique constraint | 요청 의미와 중복 판단 기준이 아직 유동적이어서, 우선은 best-effort reuse가 더 현실적이었습니다. |
-| full quota/billing system | 비용 정산보다 먼저 호출 폭주와 실패 격리를 안정화하는 것이 우선이었습니다. |
-| outbox pattern | 메시지 유실 방지보다 먼저, 현재 단계의 실패를 분리하고 DLQ를 보장하는 쪽이 적절했습니다. |
-| async preview job 전환 | 사용자 경험과 시스템 안정성의 균형을 보려면 먼저 현재 동기 흐름을 안정화해야 했습니다. |
-| workflow engine | 지금 문제는 오케스트레이션 엔진 부재보다 단계별 실패 통제가 더 본질적이었습니다. |
-| multi-provider routing | provider 전환 유연성보다 현재 provider dependency를 먼저 운영 가능하게 만드는 것이 우선이었습니다. |
-| OpenTelemetry tracing | tracing 도입보다 먼저 probe, metrics, error mapping으로 운영 기준선을 세우는 편이 효과적이었습니다. |
+| full idempotency with unique constraint | 요청 의미와 중복 판단 기준이 아직 유동적이어서, 먼저 best-effort reuse로 비용과 복잡도의 균형을 맞추는 편이 맞았습니다. |
+| full quota/billing system | 비용 정산 체계를 넓히기보다, 현재 단계에서 먼저 호출 폭주와 실패 격리를 안정화하는 쪽이 우선이었습니다. |
+| outbox pattern | 현재 문제는 메시지 발행 전체의 일관성보다, 작업 단위 실패를 분리하고 DLQ로 관찰 가능하게 만드는 것이 더 급했습니다. |
+| async preview job 전환 | preview까지 모두 비동기로 바꾸면 경험과 복잡도가 같이 커지므로, 우선 동기 흐름을 안정화하는 쪽을 선택했습니다. |
+| workflow engine | 오케스트레이션 엔진을 넣는 것보다, 현재 단계의 실패 지점과 재시도 범위를 명확히 나누는 편이 더 직접적이었습니다. |
+| multi-provider routing | provider 전환 유연성은 이후 확장 포인트로 두고, 지금은 단일 provider dependency를 운영 가능하게 만드는 데 집중했습니다. |
+| OpenTelemetry tracing | tracing을 먼저 도입하기보다 probe, metrics, error mapping으로 운영 기준선을 세우는 편이 현재 단계에 더 맞았습니다. |
 
 ---
 
@@ -208,4 +216,4 @@ flowchart LR
 
 ---
 
-[← Back to Go Backend Case Studies](../README.md)
+[← Back to Go Backend Reliability Case Studies](../README.md)

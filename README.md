@@ -1,9 +1,9 @@
-# Go Backend Case Studies
+# Go Backend Reliability Case Studies
 
 <div align="center">
 
-**복잡한 온체인/오프체인 문제를**  
-**실행 가능한 백엔드 구조와 운영 workflow로 바꾼 사례들**
+**Go 기반 백엔드 경험을 중심으로**  
+**외부 dependency와 운영 안정성 문제까지 다룬 사례들**
 
 [![Go](https://img.shields.io/badge/Language-Go-00ADD8?logo=go&logoColor=white)](#)
 [![Backend](https://img.shields.io/badge/Focus-Backend_System_Design-4A5568)](#)
@@ -15,7 +15,8 @@
 
 > [!NOTE]
 > 이 문서는 기술 스택을 많이 나열하기 위한 README가 아니라,  
-> 실제 업무에서 마주한 문제를 **어떤 기준으로 나누고, 어떤 구조로 해결했는지**를 보여주기 위한 포트폴리오 입구 문서입니다.
+> 실제 업무에서 마주한 문제를 **어떤 기준으로 나누고, 어떤 구조로 해결했는지**를 보여주기 위한 포트폴리오 입구 문서입니다.  
+> Go 기반 백엔드 경험을 중심에 두되, 외부 AI provider처럼 비용과 장애를 동반하는 dependency를 어떻게 운영 가능한 형태로 다뤘는지도 함께 보여줍니다.
 
 ---
 
@@ -65,6 +66,7 @@ flowchart TD
 | **Communication** | REST, gRPC, AMQP의 역할을 어떻게 나눌 것인가? |
 | **Reliability** | DB 저장과 메시지 발행 사이의 불일치를 어떻게 줄일 것인가? |
 | **On-chain Integration** | 체인 이벤트 수집과 온체인 TX 제출을 어떻게 백엔드 흐름에 연결할 것인가? |
+| **External Dependency** | 외부 AI provider 지연, retry 비용, 메시지 실패, readiness/metrics를 어떻게 제어할 것인가? |
 | **Operation Workflow** | 개인키 사용, 서명, 전송, 감사 로그를 어떻게 검토 가능한 절차로 만들 것인가? |
 | **Documentation** | 빠른 개발 중에도 설계 의도와 검증 기준을 어떻게 남길 것인가? |
 
@@ -76,7 +78,7 @@ flowchart TD
 |---|---|---|---|
 | [📘 온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
 | [🛠️ Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
-| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `gRPC` `Message Broker` `Object Storage` `Reliability` `Metrics` | 외부 AI provider 지연, 재시도 비용, 중복 생성, 메시지 실패를 운영 관점에서 제어 |
+| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `gRPC` `Message Broker` `Object Storage` `Reliability` `Metrics` | 동기 preview 흐름의 timeout/retry budget을 제한하고, 후속 stage를 broker 기반으로 분리해 재생성 비용과 메시지 실패를 제어 |
 
 ---
 
@@ -170,7 +172,7 @@ flowchart LR
 
 이 프로젝트는 기능 중심의 AI 이미지 생성 백엔드를 실서비스 준비 수준으로 끌어올리며, **외부 AI provider 호출을 단순 연동이 아니라 비용과 장애를 동반한 운영 dependency로 다룬 사례**입니다.
 
-핵심은 긴 모델 호출이 동기 RPC에서 worker 점유로 이어질 수 있다는 점을 인정하고, timeout/retry budget, duplicate request reuse, DLQ 보장, stage-based retry, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용한 것입니다.
+핵심은 전체 흐름을 모두 비동기로 갈아엎는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름은 message broker 기반 stage 분리로 재구성했다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
 
 핵심 설계는 다음과 같습니다.
 
@@ -191,7 +193,7 @@ flowchart LR
 
 ## Common Thread
 
-세 프로젝트는 범위가 다릅니다. 하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례이며, 세 번째는 외부 AI provider를 포함한 비동기 백엔드의 운영 안정화를 다룬 사례입니다.
+세 프로젝트는 범위가 다릅니다. 하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례이며, 세 번째는 외부 AI provider를 포함한 동기 preview와 후속 비동기 stage의 운영 안정화를 다룬 사례입니다.
 
 하지만 문제를 바라보는 방식은 같습니다.
 
@@ -257,7 +259,7 @@ flowchart LR
    운영 자동화, offline signing, Foundry 도입, 감사 가능한 workflow 설계를 더 구체적으로 볼 수 있습니다.
 
 3. **[외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md)**  
-   AI provider 의존성을 비용과 장애를 동반하는 운영 문제로 다루는 방식, readiness/metrics, 메시지 실패 분리를 볼 수 있습니다.
+   동기 preview의 timeout/retry budget, broker 기반 stage 분리, readiness/metrics, 메시지 실패 관찰성을 볼 수 있습니다.
 
 ---
 
