@@ -26,6 +26,7 @@ flowchart TD
     A[👨‍💻 Go Backend Developer] --> B[🧩 Problem Focus<br/>복잡한 도메인을 실행 가능한 구조로 분해]
     B --> C[📘 Case Study 1<br/>온체인 예측 시장 백엔드 플랫폼]
     B --> D[🛠️ Case Study 2<br/>Ethereum 트랜잭션 운영 CLI]
+    B --> E[🤖 Case Study 3<br/>외부 AI 모델 호출 백엔드 운영 안정화]
 
     C --> C1[🏗️ Service Boundary]
     C --> C2[🔁 Event Reliability]
@@ -35,12 +36,19 @@ flowchart TD
     D --> D2[🧾 Audit Trail]
     D --> D3[⚖️ Tooling Boundary]
 
-    C1 --> E[🎯 Common Strength<br/>책임 경계 · 실패 가능성 · 운영 가능성]
-    C2 --> E
-    C3 --> E
-    D1 --> E
-    D2 --> E
-    D3 --> E
+    E --> E1[⏱️ Provider Latency]
+    E --> E2[💸 Retry Cost]
+    E --> E3[📈 Readiness / Metrics]
+
+    C1 --> F[🎯 Common Strength<br/>책임 경계 · 실패 가능성 · 운영 가능성]
+    C2 --> F
+    C3 --> F
+    D1 --> F
+    D2 --> F
+    D3 --> F
+    E1 --> F
+    E2 --> F
+    E3 --> F
 ```
 
 ---
@@ -68,6 +76,7 @@ flowchart TD
 |---|---|---|---|
 | [📘 온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
 | [🛠️ Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
+| [🤖 외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `gRPC` `Message Broker` `Object Storage` `Reliability` `Metrics` | 외부 AI provider 지연, 재시도 비용, 중복 생성, 메시지 실패를 운영 관점에서 제어 |
 
 ---
 
@@ -140,9 +149,49 @@ flowchart LR
 
 ---
 
+## 3) 외부 AI 모델 호출 백엔드 운영 안정화
+
+> [!TIP]
+> AI provider 호출을 비용과 장애를 동반하는 운영 dependency로 다루고, readiness/metrics와 메시지 실패 분리를 어떻게 넣었는지 보고 싶다면 이 문서를 추천합니다.
+
+```mermaid
+flowchart LR
+    Client[Client / Internal API] --> API[AI Backend]
+    API -->|gRPC| Provider[External AI Provider]
+    API -->|store artifacts| Storage[(Object Storage)]
+    API -->|publish work| Broker[(Message Broker)]
+    Broker --> Worker[Stage Worker]
+    Worker --> Status[(Job Status Store)]
+    Worker --> Storage
+    Worker -->|sanitize errors| API
+    API --> Obs[Metrics / Readiness]
+    Worker --> Obs
+```
+
+이 프로젝트는 기능 중심의 AI 이미지 생성 백엔드를 실서비스 준비 수준으로 끌어올리며, **외부 AI provider 호출을 단순 연동이 아니라 비용과 장애를 동반한 운영 dependency로 다룬 사례**입니다.
+
+핵심은 긴 모델 호출이 동기 RPC에서 worker 점유로 이어질 수 있다는 점을 인정하고, timeout/retry budget, duplicate request reuse, DLQ 보장, stage-based retry, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용한 것입니다.
+
+핵심 설계는 다음과 같습니다.
+
+| Decision | Why |
+|---|---|
+| **safe error mapping** | 내부 exception과 provider raw error가 사용자 응답으로 직접 노출되지 않게 하기 위해 |
+| **production config fail-fast** | 빈 secret, placeholder, dev fallback으로 production이 기동되는 위험을 막기 위해 |
+| **timeout / retry budget** | worker 무한 점유와 비용 폭증을 동시에 제한하기 위해 |
+| **duplicate request reuse** | 동일 요청 반복으로 인한 중복 생성 비용을 줄이기 위해 |
+| **DLQ 보장** | 메시지 처리 실패를 유실이 아니라 추적 가능한 상태로 남기기 위해 |
+| **stage-based retry** | generation / download / upload / publish 중 일부 실패가 불필요한 재생성으로 이어지지 않게 하기 위해 |
+| **readiness / liveness 분리** | 살아 있음과 서비스 가능 상태를 구분하기 위해 |
+| **metrics 보강** | provider 지연, 실패 지점, 재시도 패턴을 운영 관점에서 관찰하기 위해 |
+
+➡️ **[자세히 보기](./projects/external-ai-model-call-backend-stabilization.md)**
+
+---
+
 ## Common Thread
 
-두 프로젝트는 범위가 다릅니다. 하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례입니다.
+세 프로젝트는 범위가 다릅니다. 하나는 실서비스 백엔드 시스템 전체의 책임 경계를 다룬 사례이고, 다른 하나는 온체인 운영 작업의 실행 절차와 보안·감사 흐름을 다룬 사례이며, 세 번째는 외부 AI provider를 포함한 비동기 백엔드의 운영 안정화를 다룬 사례입니다.
 
 하지만 문제를 바라보는 방식은 같습니다.
 
@@ -156,18 +205,22 @@ flowchart TB
     B --> B1[서비스 실행 단위 분리]
     B --> B2[TX 제출 책임 집중]
     B --> B3[키 관리와 실행 책임 분리]
+    B --> B4[외부 AI 호출의 책임 경계 분리]
 
     C --> C1[DB 저장과 메시지 발행 불일치]
     C --> C2[nonce / retry / receipt 관리]
     C --> C3[서명 전 검토 부족]
+    C --> C4[provider timeout / duplicate request / message failure]
 
     D --> D1[Outbox / DLQ]
     D --> D2[offline signing]
     D --> D3[audit trail]
+    D --> D4[readiness / metrics / safe error mapping]
 
     E --> E1[직접 구현 vs 생태계 도구 위임]
     E --> E2[편의성 vs 책임 경계]
     E --> E3[속도 vs 검증 가능성]
+    E --> E4[재시도 허용 vs 비용 통제]
 ```
 
 이 포트폴리오에서 보여주고 싶은 핵심 역량은 다음과 같습니다.
@@ -177,6 +230,7 @@ flowchart TB
 | **Backend System Design** | Go 기반 서비스의 책임 경계와 내부 실행 단위 설계 |
 | **Reliability Engineering** | Outbox, retry, DLQ, nonce, receipt polling 등 실패 가능성 관리 |
 | **On-chain / Off-chain Integration** | 체인 이벤트와 백엔드 상태 전이를 연결하는 구조 설계 |
+| **External Dependency Control** | 외부 provider 지연, 재시도 비용, 중복 요청, 메시지 실패를 운영 관점에서 제어 |
 | **Operation Workflow** | 서명, 전송, 감사 로그를 검토 가능한 운영 절차로 분리 |
 | **Technical Judgment** | 직접 구현할 영역과 검증된 도구에 위임할 영역 구분 |
 | **Documentation** | 구현 전에 설계 의도와 검증 기준을 정리하는 개발 방식 |
@@ -190,8 +244,10 @@ flowchart LR
     A[처음 방문] --> B{무엇이 궁금한가?}
     B -->|전체 시스템 설계| C[📘 Prediction Market Backend]
     B -->|운영 안정성과 workflow| D[🛠️ Ethereum CLI Tools]
+    B -->|AI provider 운영 안정화| G[🤖 External AI Backend]
     C --> E[서비스 경계 / 이벤트 처리 / TX 제출 구조]
     D --> F[Foundry / Offline Signing / Audit Trail]
+    G --> H[provider latency / retry budget / metrics / DLQ]
 ```
 
 1. **[온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md)**  
@@ -199,6 +255,9 @@ flowchart LR
 
 2. **[Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md)**  
    운영 자동화, offline signing, Foundry 도입, 감사 가능한 workflow 설계를 더 구체적으로 볼 수 있습니다.
+
+3. **[외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md)**  
+   AI provider 의존성을 비용과 장애를 동반하는 운영 문제로 다루는 방식, readiness/metrics, 메시지 실패 분리를 볼 수 있습니다.
 
 ---
 
@@ -208,6 +267,7 @@ flowchart LR
 > 이 문서는 실제 업무 경험을 기반으로 작성했지만, 공개 가능한 범위 안에서 내용을 일반화했습니다.
 
 - 실제 서비스명과 내부 코드명은 공개하지 않았습니다.
+- AI provider, model, queue, storage, event, endpoint, table, column, timeout/retry 값은 공개 가능한 범위로 일반화했습니다.
 - secret, 사설 인프라 정보, 운영 config, 감사 보고서 세부 내용은 제외했습니다.
 - 외부 프로토콜 fork 기반 영역은 직접 설계·구현한 영역과 구분해 설명합니다.
 - 보안 관련 내용은 적용 목적과 한계를 함께 설명합니다.
