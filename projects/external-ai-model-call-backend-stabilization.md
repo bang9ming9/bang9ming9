@@ -18,7 +18,7 @@
 | 핵심 주제 | provider dependency, timeout/retry budget, duplicate request reuse, DLQ, readiness/liveness |
 
 이 사례는 외부 AI 모델 호출을 기능 구현이 아니라 **비용과 장애를 동반하는 운영 dependency**로 다룬 작업입니다.  
-핵심은 전체 구조를 비동기 preview job 중심으로 바꾸는 것이 아니라, 기존 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름만 message broker 기반 stage 분리로 다뤘다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
+핵심은 전체 preview를 async job 구조로 전환한 것이 아니라, 동기 preview 흐름은 timeout/retry budget으로 worker 점유와 비용을 제한하고, 후속 고비용 생성 흐름만 message broker 기반 stage 분리로 다뤘다는 점입니다. generation / download / upload / publish의 실패 범위를 나누고, duplicate request reuse, DLQ 보장, safe error mapping, production config fail-fast, readiness/liveness 분리, metrics 보강을 우선순위대로 적용했습니다.
 
 ---
 
@@ -102,11 +102,11 @@ flowchart LR
     Client[Client / Internal API] --> API[AI Backend]
 
     subgraph Sync[Sync Preview Path]
-        API -->|gRPC request| Provider[External AI Provider]
-        Provider -->|model result| API
-        API -->|persist result| Storage[(Object Storage)]
-        API -->|update state| Status[(Job Status Store)]
-        API -->|emit signals| Obs[Metrics / Readiness]
+        API -->|request generation| Provider[External AI Provider]
+        Provider -->|generated result| API
+        API -->|store artifact| Storage[(Object Storage)]
+        API -->|update status| Status[(Job Status Store)]
+        API --> Obs[Metrics / Readiness]
         API -. timeout / retry budget .-> Provider
         API -. safe error mapping .-> Status
         API -. duplicate request reuse .-> Status
@@ -114,10 +114,10 @@ flowchart LR
 
     subgraph Async[Async Follow-up Path]
         Broker[(Message Broker)] --> Worker[Stage Worker]
-        Worker -->|gRPC request| Provider[External AI Provider]
-        Provider -->|model result| Worker
-        Worker --> Storage
-        Worker --> Status
+        Worker -->|request generation| Provider[External AI Provider]
+        Provider -->|generated result| Worker
+        Worker -->|store artifact| Storage
+        Worker -->|update status| Status
         Worker --> Obs[Metrics / Readiness]
         Broker --> DLQ[(Dead Letter Queue)]
     end
@@ -167,7 +167,7 @@ flowchart LR
 | retry가 느슨하게 열려 있었음 | timeout / retry budget 적용 | 비용 폭증과 무한 재시도를 억제 |
 | 반복 요청이 그대로 새 생성으로 이어질 수 있었음 | duplicate request reuse 적용 | 중복 생성 비용 완화 |
 | 일부 message 실패가 묻힐 수 있었음 | DLQ 보장 | 실패 작업을 추적 가능 상태로 유지 |
-| upload/publish 실패가 재생성을 유발할 수 있었음 | 후속 고비용 흐름에 generation / download / upload / publish stage-based retry 적용 | 후속 흐름에서 실패 범위를 좁히고 불필요한 재생성을 차단 |
+| upload/publish 실패가 재생성을 유발할 수 있었음 | 후속 고비용 흐름에 generation / download / upload / publish stage를 분리해 retry 범위를 제한 | 후속 흐름에서 실패 범위를 좁히고 불필요한 재생성을 차단 |
 | 기동 후에야 config 문제를 발견할 수 있었음 | production config fail-fast | 배포 실패를 더 일찍, 더 명확하게 드러냄 |
 | 운영 상태를 감으로 판단해야 했음 | readiness / metrics 보강 | 서비스 가능 여부와 원인 파악이 쉬워짐 |
 
