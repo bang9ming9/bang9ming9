@@ -103,8 +103,10 @@ flowchart LR
 
     subgraph Sync[Sync Preview Path]
         API -->|gRPC| Provider[External AI Provider]
-        Provider --> Storage[(Object Storage)]
-        Storage --> Status[(Job Status Store)]
+        Provider --> API
+        API --> Storage[(Object Storage)]
+        API --> Status[(Job Status Store)]
+        API --> Obs[Metrics / Readiness]
         API -. timeout / retry budget .-> Provider
         API -. safe error mapping .-> Status
         API -. duplicate request reuse .-> Status
@@ -113,19 +115,17 @@ flowchart LR
     subgraph Async[Async Follow-up Path]
         Broker[(Message Broker)] --> Worker[Stage Worker]
         Worker --> G[Generate]
-        G --> D[Download]
-        D --> U[Upload]
-        U --> P[Publish]
         G --> Provider
-        D --> Storage
-        U --> Storage
-        P --> Status
-        Broker --> DLQ[(Dead Letter Queue)]
+        Worker --> D[Download]
+        Worker --> U[Upload]
+        Worker --> P[Publish]
+        Worker --> Storage
+        Worker --> Status
         Worker --> Obs[Metrics / Readiness]
+        Broker --> DLQ[(Dead Letter Queue)]
     end
 
     API --> Broker
-    API --> Obs
 ```
 
 ### Component Map
@@ -137,11 +137,11 @@ flowchart LR
 | `Stage Worker` | generation / download / upload / publish 단계 실행 | 긴 작업을 한 번에 묶지 않고 실패 지점을 나누기 위해 |
 | `External AI Provider` | 실제 모델 추론 수행 | 외부 dependency를 명시적으로 분리하기 위해 |
 | `Object Storage` | 결과물 저장과 전달 매개체 | 생성 결과를 후속 단계와 분리해 다루기 위해 |
-| `Message Broker` | 비동기 작업 전달 | blocking RPC와 작업 실행을 분리하기 위해 |
+| `Message Broker` | 후속/고비용 작업 전달 | 동기 preview 흐름과 분리된 작업만 넘기고 실패 메시지를 DLQ로 추적 가능하게 하기 위해 |
 | `Job Status Store` | 작업 상태 추적 | 운영자가 현재 상태와 실패 지점을 확인할 수 있게 하기 위해 |
 | `Metrics / Readiness` | 헬스, 지연, 실패, 재시도 관찰 | 서비스 가능 상태를 운영 신호로 판단하기 위해 |
 
-이 구조의 핵심은 provider 호출 자체보다, **호출 이후의 저장, 전달, 게시, 상태 추적을 별도 책임으로 나눴다**는 점입니다.
+이 구조의 핵심은 provider 호출 자체보다, **동기 preview는 유지하되 후속/고비용 작업의 저장, 전달, 게시, 상태 추적을 별도 책임으로 나눴다**는 점입니다. 모든 preview 요청을 async job으로 전환한 것은 아닙니다.
 
 ---
 
@@ -165,12 +165,12 @@ flowchart LR
 
 | Before | After | Operational effect |
 |---|---|---|
-| 긴 모델 호출이 동기 요청 안에 묶여 있었음 | 단계화된 흐름으로 worker 점유를 제한 | 장시간 호출이 전체 처리량을 잠식하는 현상을 줄임 |
+| 긴 모델 호출이 동기 preview 요청 안에 묶여 있었음 | timeout / retry budget으로 worker 점유 상한을 설정 | preview를 async job으로 바꾸지 않고도 장시간 호출의 영향과 비용을 제한 |
 | provider 에러와 내부 에러가 뒤섞여 있었음 | safe error mapping으로 응답 표준화 | 사용자 노출을 막고 운영 추적은 로그/metrics로 분리 |
 | retry가 느슨하게 열려 있었음 | timeout / retry budget 적용 | 비용 폭증과 무한 재시도를 억제 |
 | 반복 요청이 그대로 새 생성으로 이어질 수 있었음 | duplicate request reuse 적용 | 중복 생성 비용 완화 |
 | 일부 message 실패가 묻힐 수 있었음 | DLQ 보장 | 실패 작업을 추적 가능 상태로 유지 |
-| upload/publish 실패가 재생성을 유발할 수 있었음 | stage-based retry 적용 | 실패가 앞 단계로 전파되는 비용 차단 |
+| upload/publish 실패가 재생성을 유발할 수 있었음 | generation / download / upload / publish stage별 retry 적용 | 후속 고비용 흐름에서 실패 범위를 좁히고 불필요한 재생성을 차단 |
 | 기동 후에야 config 문제를 발견할 수 있었음 | production config fail-fast | 배포 실패를 더 일찍, 더 명확하게 드러냄 |
 | 운영 상태를 감으로 판단해야 했음 | readiness / metrics 보강 | 서비스 가능 여부와 원인 파악이 쉬워짐 |
 

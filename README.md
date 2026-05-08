@@ -3,9 +3,11 @@
 <div align="center">
 
 **Go 기반 백엔드 경험을 중심으로**  
-**외부 dependency와 운영 안정성 문제까지 다룬 사례들**
+**외부 dependency와 운영 안정성 문제까지 다룬 사례들**  
+**Python 기반 AI backend reliability case도 포함**
 
 [![Go](https://img.shields.io/badge/Language-Go-00ADD8?logo=go&logoColor=white)](#)
+[![Python](https://img.shields.io/badge/Language-Python-3776AB?logo=python&logoColor=white)](#)
 [![Backend](https://img.shields.io/badge/Focus-Backend_System_Design-4A5568)](#)
 [![Reliability](https://img.shields.io/badge/Focus-Reliability-2F855A)](#)
 [![On-chain](https://img.shields.io/badge/Domain-On--chain%20%2F%20Off--chain-805AD5)](#)
