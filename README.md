@@ -74,8 +74,8 @@ flowchart TD
 
 | Case Study | Scope | Core Keywords | What it shows |
 |---|---|---|---|
-| [온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
-| [Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-tx-ops-cli.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
+| [온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md) | 실서비스 백엔드 시스템 | `Go` `gRPC` `AMQP` `Outbox` `tx-scheduler` `EDD` | 서비스 경계 설계, 이벤트 처리 신뢰성, 온체인 TX 제출 책임 분리 |
+| [Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md) | 운영 CLI 도구셋 | `Go` `Foundry` `Offline Signing` `Audit Trail` `Keystore` | 위험한 온체인 운영 작업을 단계와 산출물 중심 workflow로 재구성 |
 | [외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md) | 비공개 실서비스 준비 백엔드 | `Python` `Go` `gRPC` `Redis` `Message Broker` `Idempotency` `Event Recovery` `Metrics` | 외부 AI provider 호출의 timeout/retry 비용, duplicate generation, quota, completion event recovery, consumer idempotency를 단계적으로 제어 |
 
 ---
@@ -116,7 +116,7 @@ flowchart LR
 | tx-scheduler 분리 | nonce, retry, gas, receipt 처리를 개별 서비스가 아니라 전담 컴포넌트에서 관리하기 위해 |
 | EDD 기반 문서화 | 구현 전에 요구사항, 경계, 실패 시나리오, 검증 기준을 정리하기 위해 |
 
-[자세히 보기](./projects/prediction-market-backend.md)
+[자세히 보기](./projects/onchain-prediction-market-backend.md)
 
 ---
 
@@ -144,7 +144,7 @@ flowchart LR
 | offline signing | 개인키 사용 환경과 네트워크 전송 환경을 분리하기 위해 |
 | keystore / transaction lifecycle 분리 | 키 관리와 트랜잭션 실행 책임의 경계를 명확히 하기 위해 |
 
-[자세히 보기](./projects/ethereum-tx-ops-cli.md)
+[자세히 보기](./projects/ethereum-transaction-cli-tools.md)
 
 ---
 
@@ -268,6 +268,6 @@ flowchart LR
     E --> E1[Redis quota / DB idempotency / Event Recovery / Consumer Idempotency]
 ```
 
-- 전체 백엔드 설계와 서비스 경계를 보고 싶다면 [온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/prediction-market-backend.md)을 먼저 읽는 것을 추천합니다.
-- 운영 리스크를 줄이기 위한 도구 설계와 오프라인 서명 workflow가 궁금하다면 [Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-tx-ops-cli.md)을 추천합니다.
+- 전체 백엔드 설계와 서비스 경계를 보고 싶다면 [온체인 예측 시장 백엔드 플랫폼 설계 및 개발](./projects/onchain-prediction-market-backend.md)을 먼저 읽는 것을 추천합니다.
+- 운영 리스크를 줄이기 위한 도구 설계와 오프라인 서명 workflow가 궁금하다면 [Ethereum 트랜잭션 운영 리스크를 줄이기 위한 CLI 도구셋 개발](./projects/ethereum-transaction-cli-tools.md)을 추천합니다.
 - 외부 AI provider 호출, timeout/retry budget, Redis quota, DB-level idempotency, completion event recovery, consumer idempotency가 궁금하다면 [외부 AI 모델 호출 백엔드 운영 안정화](./projects/external-ai-model-call-backend-stabilization.md)를 추천합니다.
